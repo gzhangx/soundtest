@@ -2,6 +2,7 @@
 from audio_utils import record_to_numpy, save_numpy_to_wav, load_wav_to_numpy
 import numpy as np
 import matplotlib.pyplot as plt
+import sounddevice as sd
 
 def simple_spectrogram(audio_data, sample_rate, window_size=256, overlap=128):
     """
@@ -27,6 +28,7 @@ def simple_spectrogram(audio_data, sample_rate, window_size=256, overlap=128):
 
     # Plot
     plt.figure(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(10, 6))
     plt.pcolormesh(times, frequencies, 10 * np.log10(spectrogram + 1e-10), shading='gouraud')
     plt.ylabel('Frequency (Hz)')
     plt.xlabel('Time (s)')
@@ -34,7 +36,30 @@ def simple_spectrogram(audio_data, sample_rate, window_size=256, overlap=128):
     plt.colorbar(label='Intensity (dB)')
     plt.ylim(0, 4000)  # Max frequency is Nyquist (sample_rate / 2 = 4000 Hz)
     plt.tight_layout()
+
+    fig.audio_data = audio_data
+    fig.sample_rate = sample_rate
+
+    # Connect click event
+    fig.canvas.mpl_connect('button_press_event', on_click)
+
     plt.show()
+
+def on_click(event):
+    """Play audio from the clicked time position."""
+    if event.xdata is None:  # Click outside plot
+        return
+
+    audio_data = event.canvas.figure.audio_data
+    sample_rate = event.canvas.figure.sample_rate
+    start_time = event.xdata  # Time in seconds
+    start_sample = int(start_time * sample_rate)
+
+    if start_sample < len(audio_data):
+        print(f"Playing from {start_time:.2f} seconds...")
+        playback_data = audio_data[start_sample:start_sample+sample_rate]
+        sd.play(playback_data, sample_rate)
+        sd.wait()  # Wait for playback to finish
 
 def recordToFile():
     # Record audio with lowest rate (8000 Hz) and format (paInt8)
