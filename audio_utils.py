@@ -56,35 +56,3 @@ def save_numpy_to_wav(audio_data, filename):
     wf.close()
     print(f"Audio saved to {filename}")
 
-def load_wav_to_numpy(filename):
-    """
-    Load a WAV file into a NumPy array using wave and numpy.
-    """
-    with wave.open(filename, 'rb') as wf:
-        sample_rate = wf.getframerate()
-        channels = wf.getnchannels()
-        sample_width = wf.getsampwidth()
-        n_frames = wf.getnframes()
-
-        raw_data = wf.readframes(n_frames)
-
-        if sample_width == 1:
-            dtype = np.int8  # 8-bit signed
-        elif sample_width == 2:
-            dtype = np.int16
-        elif sample_width == 4:
-            dtype = np.int32
-        else:
-            raise ValueError(f"Unsupported sample width: {sample_width}")
-
-        audio_data = np.frombuffer(raw_data, dtype=dtype)
-
-        if channels > 1:
-            audio_data = audio_data.reshape(-1, channels)
-
-        print(f"Loaded {filename}")
-        print(f"Sample Rate: {sample_rate} Hz")
-        print(f"Channels: {channels}")
-        print(f"Audio Shape: {audio_data.shape}")
-
-        return sample_rate, audio_data
