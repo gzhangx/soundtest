@@ -1,80 +1,112 @@
 import wave
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.fft import fft, ifft
 import sounddevice as sd
+from matplotlib.widgets import SpanSelector
 
-# Load the wave file
+# Load the WAV file
 def load_wave_file(file_path):
     with wave.open(file_path, 'rb') as wav_file:
-        sample_rate = wav_file.getframerate()
-        n_frames = wav_file.getnframes()
-        audio_data = wav_file.readframes(n_frames)
-        audio_data = np.frombuffer(audio_data, dtype=np.int16)
-    return sample_rate, audio_data
+        frames = wav_file.getnframes()
+        rate = wav_file.getframerate()
+        signal = wav_file.readframes(-1)
+        signal = np.frombuffer(signal, dtype=np.int16)
+        return signal, rate, frames
 
-# Perform FFT
-def perform_fft(data):
-    n = len(data)
-    fft_result = fft(data)
-    freq = np.fft.fftfreq(n, d=1/sample_rate)
-    return freq[:n//2], fft_result[:n//2]
+# Plot the waveform and spectrogram side by side
+def plot_waveform_and_spectrogram(signal, rate):
+    time = np.linspace(0, len(signal) / rate, num=len(signal))
 
-# Adjust FFT using mouse
-def adjust_fft(freq, fft_result, original_data):
-    fig, ax = plt.subplots()
-    magnitude = np.abs(fft_result)
-    line, = ax.plot(freq, magnitude, lw=2, picker=True, pickradius=5)
-    ax.set_xlabel('Frequency (Hz)')
-    ax.set_ylabel('Magnitude')
+    # Create a figure with two subplots
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
 
-    # Store the original FFT for reference
-    original_fft = fft_result.copy()
+    # Plot the waveform
+    ax1.plot(time, signal)
+    ax1.set_title("Waveform")
+    ax1.set_xlabel("Time [s]")
+    ax1.set_ylabel("Amplitude")
 
-    # Function to update the graph and audio
-    def update_audio():
-        modified_fft = np.zeros(len(original_data), dtype=complex)
-        modified_fft[:len(fft_result)] = fft_result
-        modified_fft[len(fft_result):] = np.conj(fft_result[::-1])
-        modified_data = np.real(ifft(modified_fft)).astype(np.int16)
-        sd.play(modified_data, samplerate=sample_rate)
-        sd.wait()
+    # Compute and plot the spectrogram using numpy.fft
+    spectrogram_data = compute_spectrogram(signal, rate)
+    extent = [0, len(signal) / rate, 0, rate / 2]  # Time and frequency extent
+    ax2.imshow(10 * np.log10(spectrogram_data), aspect='auto', extent=extent, origin='lower')
+    ax2.set_title("Spectrogram (numpy.fft)")
+    ax2.set_xlabel("Time [s]")
+    ax2.set_ylabel("Frequency [Hz]")
 
-    # Event handler for mouse clicks and drags
-    def on_pick(event):
-        ind = event.ind[0]
-        point = line.get_data()
-        x, y = point[0][ind], point[1][ind]
+    plt.tight_layout()
+    return fig, (ax1, ax2)
 
-        def on_motion(event):
-            if event.inaxes != ax:
-                return
-            new_y = event.ydata
-            if new_y is None:
-                return
-            fft_result[ind] = fft_result[ind] * (new_y / magnitude[ind])
-            magnitude[ind] = new_y
-            line.set_ydata(magnitude)
-            fig.canvas.draw_idle()
+# Compute the spectrogram using numpy.fft
+def compute_spectrogram(signal, rate, window_size=1024, overlap=512):
+    hop_size = window_size - overlap
+    num_windows = (len(signal) - window_size) // hop_size + 1
 
-        def on_release(event):
-            fig.canvas.mpl_disconnect(motion_id)
-            fig.canvas.mpl_disconnect(release_id)
-            update_audio()
+    # Initialize the spectrogram array
+    spectrogram = np.zeros((window_size // 2, num_windows))
 
-        motion_id = fig.canvas.mpl_connect('motion_notify_event', on_motion)
-        release_id = fig.canvas.mpl_connect('button_release_event', on_release)
+    # Apply a Hann window
+    window = np.hanning(window_size)
 
-    fig.canvas.mpl_connect('pick_event', on_pick)
+    for i in range(num_windows):
+        start = i * hop_size
+        end = start + window_size
+        segment = signal[start:end] * window  # Apply windowing
+        fft_result = np.fft.fft(segment)[:window_size // 2]  # Take only positive frequencies
+        spectrogram[:, i] = np.abs(fft_result)  # Store magnitude
+
+    return spectrogram
+
+# Callback function for selecting a section
+def onselect(xmin, xmax):
+    global selected_section
+    selected_section = (xmin, xmax)
+    print(f"Selected section: {xmin:.2f}s to {xmax:.2f}s")
+
+# Play the selected section using sounddevice
+def play_selected_section(signal, rate, start_time, end_time):
+    start_sample = int(start_time * rate)
+    end_sample = int(end_time * rate)
+    selected_signal = signal[start_sample:end_sample]
+    sd.play(selected_signal, rate)
+    sd.wait()  # Wait until playback is finished
+
+# Compute and plot the FFT of the selected section
+def plot_fft(signal, rate, start_time, end_time):
+    start_sample = int(start_time * rate)
+    end_sample = int(end_time * rate)
+    selected_signal = signal[start_sample:end_sample]
+
+    # Compute the FFT
+    n = len(selected_signal)
+    fft_result = np.fft.fft(selected_signal)
+    fft_freqs = np.fft.fftfreq(n, d=1/rate)
+
+    # Plot the FFT magnitude
+    plt.figure(figsize=(10, 4))
+    plt.plot(fft_freqs[:n // 2], np.abs(fft_result[:n // 2]))
+    plt.title("FFT of Selected Section")
+    plt.xlabel("Frequency [Hz]")
+    plt.ylabel("Magnitude")
+    plt.grid()
     plt.show()
 
 # Main function
-def main(file_path):
-    global sample_rate
-    sample_rate, audio_data = load_wave_file(file_path)
-    freq, fft_result = perform_fft(audio_data)
-    adjust_fft(freq, fft_result, audio_data)
+def main():
+    file_path = "h123.wav"  # Replace with your WAV file path
+    signal, rate, frames = load_wave_file(file_path)
+    fig, (ax1, ax2) = plot_waveform_and_spectrogram(signal, rate)
+
+    # Add span selector for selecting a section
+    span = SpanSelector(ax1, onselect, 'horizontal', useblit=True)
+
+    plt.show()
+
+    # After closing the plot, play the selected section and compute FFT
+    if 'selected_section' in globals():
+        start_time, end_time = selected_section
+        play_selected_section(signal, rate, start_time, end_time)
+        plot_fft(signal, rate, start_time, end_time)
 
 if __name__ == "__main__":
-    file_path = 'h123.wav'  # Replace with your wave file path
-    main(file_path)
+    main()
