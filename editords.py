@@ -14,7 +14,7 @@ def load_wave_file(file_path):
         return signal, rate, frames
 
 # Plot the waveform and spectrogram side by side
-def plot_waveform_and_spectrogram(signal, rate):
+def plot_waveform_and_spectrogram(signal, rate, title):
     time = np.linspace(0, len(signal) / rate, num=len(signal))
 
     # Create a figure with two subplots
@@ -22,7 +22,7 @@ def plot_waveform_and_spectrogram(signal, rate):
 
     # Plot the waveform
     ax1.plot(time, signal)
-    ax1.set_title("Waveform")
+    ax1.set_title(f"{title} - Waveform")
     ax1.set_xlabel("Time [s]")
     ax1.set_ylabel("Amplitude")
 
@@ -30,7 +30,7 @@ def plot_waveform_and_spectrogram(signal, rate):
     spectrogram_data = compute_spectrogram(signal, rate)
     extent = [0, len(signal) / rate, 0, rate / 2]  # Time and frequency extent
     ax2.imshow(10 * np.log10(spectrogram_data), aspect='auto', extent=extent, origin='lower')
-    ax2.set_title("Spectrogram (numpy.fft)")
+    ax2.set_title(f"{title} - Spectrogram (numpy.fft)")
     ax2.set_xlabel("Time [s]")
     ax2.set_ylabel("Frequency [Hz]")
 
@@ -63,50 +63,38 @@ def onselect(xmin, xmax):
     selected_section = (xmin, xmax)
     print(f"Selected section: {xmin:.2f}s to {xmax:.2f}s")
 
-# Play the selected section using sounddevice
-def play_selected_section(signal, rate, start_time, end_time):
-    start_sample = int(start_time * rate)
-    end_sample = int(end_time * rate)
-    selected_signal = signal[start_sample:end_sample]
-    sd.play(selected_signal, rate)
-    sd.wait()  # Wait until playback is finished
-
-# Compute and plot the FFT of the selected section
-def plot_fft(signal, rate, start_time, end_time):
-    start_sample = int(start_time * rate)
-    end_sample = int(end_time * rate)
+    # Extract the selected section
+    start_sample = int(xmin * rate)
+    end_sample = int(xmax * rate)
     selected_signal = signal[start_sample:end_sample]
 
-    # Compute the FFT
-    n = len(selected_signal)
-    fft_result = np.fft.fft(selected_signal)
-    fft_freqs = np.fft.fftfreq(n, d=1/rate)
+    # Plot the selected section in a new window
+    plot_selected_section(selected_signal, rate, xmin, xmax)
 
-    # Plot the FFT magnitude
-    plt.figure(figsize=(10, 4))
-    plt.plot(fft_freqs[:n // 2], np.abs(fft_result[:n // 2]))
-    plt.title("FFT of Selected Section")
-    plt.xlabel("Frequency [Hz]")
-    plt.ylabel("Magnitude")
-    plt.grid()
+# Plot the selected section in a new window
+def plot_selected_section(selected_signal, rate, start_time, end_time):
+    fig, (ax1, ax2) = plot_waveform_and_spectrogram(selected_signal, rate, f"Selected Section ({start_time:.2f}s to {end_time:.2f}s)")
     plt.show()
+
+    # Play the selected section
+    play_selected_section(selected_signal, rate)
+
+# Play the selected section using sounddevice
+def play_selected_section(signal, rate):
+    sd.play(signal, rate)
+    sd.wait()  # Wait until playback is finished
 
 # Main function
 def main():
+    global signal, rate
     file_path = "h123.wav"  # Replace with your WAV file path
     signal, rate, frames = load_wave_file(file_path)
-    fig, (ax1, ax2) = plot_waveform_and_spectrogram(signal, rate)
+    fig, (ax1, ax2) = plot_waveform_and_spectrogram(signal, rate, "Full Audio")
 
     # Add span selector for selecting a section
     span = SpanSelector(ax1, onselect, 'horizontal', useblit=True)
 
     plt.show()
-
-    # After closing the plot, play the selected section and compute FFT
-    if 'selected_section' in globals():
-        start_time, end_time = selected_section
-        play_selected_section(signal, rate, start_time, end_time)
-        plot_fft(signal, rate, start_time, end_time)
 
 if __name__ == "__main__":
     main()
