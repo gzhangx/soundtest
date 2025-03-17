@@ -5,10 +5,11 @@ import sounddevice as sd
 from matplotlib.widgets import SpanSelector
 
 class AudioWindow:
-    def __init__(self, data, fs, title_prefix=""):
+    def __init__(self, data, fs, title_prefix="", is_main=True):
         self.data = data
         self.fs = fs
         self.title_prefix = title_prefix
+        self.is_main = is_main  # Flag to determine if it's the main window
         self.fig = None
         self.span = None
         self.create_window()
@@ -26,50 +27,63 @@ class AudioWindow:
         # Create time array
         time = np.linspace(0, len(self.data) / self.fs, num=len(self.data))
 
-        # Spectrogram parameters
-        n_fft = 1024
-        hop_length = 256
-        window = self.hanning(n_fft)
-
-        # Calculate spectrogram
-        spec = []
-        n_frames_spec = (len(self.data) - n_fft) // hop_length + 1
-        if n_frames_spec <= 0:
-            print("Selection too short for spectrogram analysis. Playing audio only.")
-            self.play_audio(self.data)
-            return
-
-        for i in range(0, len(self.data) - n_fft, hop_length):
-            frame = self.data[i:i + n_fft] * window
-            fft_result = np.fft.fft(frame)
-            fft_magnitude = np.abs(fft_result[:n_fft//2])
-            spec.append(fft_magnitude)
-        
-        spec = np.array(spec).T
-        freqs = np.linspace(0, self.fs/2, n_fft//2)
-        times = np.linspace(0, len(self.data)/self.fs, n_frames_spec)
-
         # Create figure
         self.fig = plt.figure(figsize=(12, 8))
         ax1 = self.fig.add_subplot(2, 1, 1)
         ax2 = self.fig.add_subplot(2, 1, 2)
 
-        # Plot waveform
+        # Plot waveform (same for both main and new windows)
         ax1.plot(time, self.data)
         ax1.set_title(f'{self.title_prefix}Waveform')
         ax1.set_xlabel('Time (s)')
         ax1.set_ylabel('Amplitude')
         ax1.grid(True)
+        self.play_audio(self.data)
+        
+        if self.is_main:
+            # Spectrogram for main window
+            n_fft = 1024
+            hop_length = 256
+            window = self.hanning(n_fft)
 
-        # Plot spectrogram
-        ax2.imshow(20 * np.log10(spec + 1e-10),
-                   aspect='auto',
-                   origin='lower',
-                   extent=[times[0], times[-1], freqs[0], freqs[-1]],
-                   cmap='viridis')
-        ax2.set_title(f'{self.title_prefix}Spectrogram')
-        ax2.set_xlabel('Time (s)')
-        ax2.set_ylabel('Frequency (Hz)')
+            spec = []
+            n_frames_spec = (len(self.data) - n_fft) // hop_length + 1
+            if n_frames_spec <= 0:
+                print("Audio too short for spectrogram analysis. Playing audio only.")
+                
+                return
+
+            for i in range(0, len(self.data) - n_fft, hop_length):
+                frame = self.data[i:i + n_fft] * window
+                fft_result = np.fft.fft(frame)
+                fft_magnitude = np.abs(fft_result[:n_fft//2])
+                spec.append(fft_magnitude)
+            
+            spec = np.array(spec).T
+            freqs = np.linspace(0, self.fs/2, n_fft//2)
+            times = np.linspace(0, len(self.data)/self.fs, n_frames_spec)
+
+            ax2.imshow(20 * np.log10(spec + 1e-10),
+                       aspect='auto',
+                       origin='lower',
+                       extent=[times[0], times[-1], freqs[0], freqs[-1]],
+                       cmap='viridis')
+            ax2.set_title(f'{self.title_prefix}Spectrogram')
+            ax2.set_xlabel('Time (s)')
+            ax2.set_ylabel('Frequency (Hz)')
+        else:
+            # FFT for new windows
+            n_fft = len(self.data)  # Use full length of selection for FFT
+            window = self.hanning(n_fft)
+            fft_data = np.fft.fft(self.data * window)
+            fft_magnitude = np.abs(fft_data[:n_fft//2])
+            freqs = np.linspace(0, self.fs/2, n_fft//2)
+
+            ax2.plot(freqs, fft_magnitude)
+            ax2.set_title(f'{self.title_prefix}FFT')
+            ax2.set_xlabel('Frequency (Hz)')
+            ax2.set_ylabel('Magnitude')
+            ax2.grid(True)
 
         # Selection handler
         def onselect(xmin, xmax):
@@ -86,8 +100,8 @@ class AudioWindow:
             print(f"Playing selection from {xmin:.2f}s to {xmax:.2f}s")
             selected_data = self.data[start_idx:end_idx]
             self.play_audio(selected_data)
-            # Create new window with the selected section
-            new_window = AudioWindow(selected_data, self.fs, f"Selected ({xmin:.2f}-{xmax:.2f}s) ")
+            # Create new window with FFT
+            new_window = AudioWindow(selected_data, self.fs, f"Selected ({xmin:.2f}-{xmax:.2f}s) ", is_main=False)
 
         # Add SpanSelector
         self.span = SpanSelector(
@@ -126,14 +140,14 @@ with wave.open(filename, 'rb') as wf:
     if n_channels > 1:
         audio_data = audio_data.reshape(-1, n_channels).mean(axis=1)
 
-# Create the main window
-main_window = AudioWindow(audio_data, fs, "Main ")
+# Create the main window with spectrogram
+main_window = AudioWindow(audio_data, fs, "Main ", is_main=True)
 
 # Instructions
 print("Click and drag on the waveform to select a region to play back and analyze")
 print(f"Audio duration: {len(audio_data)/fs:.2f} seconds")
 print(f"Sample rate: {fs} Hz")
-print(f"Spectrogram parameters: FFT size = 1024, Hop length = 256")
+print(f"Main window spectrogram parameters: FFT size = 1024, Hop length = 256")
 
 # Start the matplotlib event loop
 plt.ion()  # Enable interactive mode
