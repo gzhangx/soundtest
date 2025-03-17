@@ -2,26 +2,39 @@ import numpy as np
 import matplotlib.pyplot as plt
 import wave
 import sounddevice as sd
-from matplotlib.widgets import SpanSelector
+from matplotlib.widgets import SpanSelector, CheckButtons
 
 class AudioWindow:
-    def __init__(self, data, fs, title_prefix="", is_main=True):
+    def __init__(self, data, fs, title_prefix="",  drop_lowest_20 = False, is_main=True):
         self.data = data
         self.fs = fs
         self.title_prefix = title_prefix
         self.is_main = is_main  # Flag to determine if it's the main window
         self.fig = None
         self.span = None
+        self.drop_lowest_20 = drop_lowest_20  # Flag to determine if we should drop the lowest 20% of FFT
         self.create_window()
 
     def hanning(self, n):
         return 0.5 - 0.5 * np.cos(2.0 * np.pi * np.arange(n) / (n - 1))
 
     def play_audio(self, data):
+        if self.drop_lowest_20:
+            data = self.modify_fft(data)
         if data.dtype != np.float32:
             data = data.astype(np.float32) / np.max(np.abs(data))
         sd.play(data, self.fs)
         sd.wait()
+
+    def modify_fft(self, data):
+        n_fft = len(data)
+        window = self.hanning(n_fft)
+        fft_data = np.fft.fft(data * window)
+        fft_magnitude = np.abs(fft_data)
+        threshold = np.percentile(fft_magnitude, 20)
+        fft_data[fft_magnitude < threshold] = 0
+        modified_data = np.fft.ifft(fft_data).real
+        return modified_data
 
     def create_window(self):
         # Create time array
@@ -112,6 +125,14 @@ class AudioWindow:
             props=dict(alpha=0.5, facecolor='red'),
             interactive=True
         )
+
+        # Add CheckButtons for toggling the drop lowest 20% option
+        ax_check = plt.axes([0.8, 0.01, 0.15, 0.05])
+        self.check = CheckButtons(ax_check, ['Drop lowest 20%'], [self.drop_lowest_20])
+        def toggle_drop_lowest(label):
+            #self.drop_lowest_20 = not self.drop_lowest_20
+            new_window = AudioWindow(self.data, self.fs, f"{self.title_prefix} drop low ", drop_lowest_20=True, is_main=False)
+        self.check.on_clicked(toggle_drop_lowest)
 
         self.fig.tight_layout()
         self.fig.canvas.draw()
