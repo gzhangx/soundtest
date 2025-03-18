@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import wave
 import sounddevice as sd
-from matplotlib.widgets import SpanSelector, CheckButtons
+from matplotlib.widgets import SpanSelector, CheckButtons, Button
 
 class AudioWindow:
     def __init__(self, data, fs, title_prefix="",  drop_lowest_20 = False, is_main=True):
@@ -51,7 +51,7 @@ class AudioWindow:
         ax1.set_xlabel('Time (s)')
         ax1.set_ylabel('Amplitude')
         ax1.grid(True)
-        self.play_audio(self.data)
+        #self.play_audio(self.data)
         
         if self.is_main:
             # Spectrogram for main window
@@ -128,12 +128,19 @@ class AudioWindow:
 
         # Add CheckButtons for toggling the drop lowest 20% option
         ax_check = plt.axes([0.8, 0.01, 0.15, 0.05])
-        self.check = CheckButtons(ax_check, ['Drop lowest 20%'], [self.drop_lowest_20])
+        selfcheck = CheckButtons(ax_check, ['Drop lowest 20%']) #, [self.drop_lowest_20])
         def toggle_drop_lowest(label):
             #self.drop_lowest_20 = not self.drop_lowest_20
             new_window = AudioWindow(self.data, self.fs, f"{self.title_prefix} drop low ", drop_lowest_20=True, is_main=False)
-        self.check.on_clicked(toggle_drop_lowest)
+        selfcheck.on_clicked(toggle_drop_lowest)
 
+        self.btn = Button(plt.axes([0.6, 0.01, 0.15, 0.05]), 'Play Sound')
+
+        def onBtnPlay(evt):
+            print("play sound clicked " + str(len(self.data)))
+            self.play_audio(self.data)
+        
+        self.btn.on_clicked(onBtnPlay)
         self.fig.tight_layout()
         self.fig.canvas.draw()
         self.fig.show()
